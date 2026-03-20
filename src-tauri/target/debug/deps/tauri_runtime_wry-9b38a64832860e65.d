@@ -1,0 +1,9 @@
+/Users/michalkrsik/windsurf_project_folder/friends_wall/src-tauri/target/debug/deps/tauri_runtime_wry-9b38a64832860e65.d: /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/lib.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/util.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/webview.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/window/mod.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/window/macos.rs
+
+/Users/michalkrsik/windsurf_project_folder/friends_wall/src-tauri/target/debug/deps/libtauri_runtime_wry-9b38a64832860e65.rmeta: /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/lib.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/util.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/webview.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/window/mod.rs /Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/window/macos.rs
+
+/Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/lib.rs:
+/Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/util.rs:
+/Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/webview.rs:
+/Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/window/mod.rs:
+/Users/michalkrsik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.4.1/src/window/macos.rs:

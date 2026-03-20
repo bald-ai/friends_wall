@@ -1,0 +1,12 @@
+{
+  "name": "friends-wall-listener",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node wallpaper-listener.mjs"
+  },
+  "dependencies": {
+    "convex": "^1.33.1"
+  }
+}
