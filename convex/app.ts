@@ -7,6 +7,7 @@ import {
   getLiveConnectionForDevice,
   isInviteExpired,
   isPresenceFresh,
+  now,
 } from "./lib";
 
 const query = queryGeneric;
@@ -16,6 +17,7 @@ export const getAppState = query({
     deviceId: v.string(),
   },
   handler: async (ctx, args) => {
+    const serverNow = now();
     const device = await getDeviceByExternalId(ctx, args.deviceId);
     const allOpenInvites = await ctx.db
       .query("invites")
@@ -98,6 +100,7 @@ export const getAppState = query({
     );
 
     return {
+      serverNow,
       device,
       activeInvite,
       connection: connection

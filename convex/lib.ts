@@ -1,7 +1,10 @@
 import type { GenericMutationCtx, GenericQueryCtx } from "convex/server";
-
-const INVITE_TTL_MS = 1000 * 60 * 10;
-const PRESENCE_WINDOW_MS = 1000 * 20;
+import {
+  INVITE_TTL_MS,
+  PRESENCE_WINDOW_MS,
+  isInviteExpiredAt,
+  isPresenceFreshAt,
+} from "../shared/runtime";
 
 export function now() {
   return Date.now();
@@ -15,7 +18,7 @@ export function getInviteExpiration(createdAt: number) {
 }
 
 export function isInviteExpired(expiresAt: number) {
-  return expiresAt <= now();
+  return isInviteExpiredAt(expiresAt, now());
 }
 
 export function sortPair(deviceOneId: string, deviceTwoId: string) {
@@ -93,5 +96,5 @@ export function acceptedBySelf(
 }
 
 export function isPresenceFresh(lastHeartbeatAt: number) {
-  return now() - lastHeartbeatAt <= PRESENCE_WINDOW_MS;
+  return isPresenceFreshAt(lastHeartbeatAt, now(), PRESENCE_WINDOW_MS);
 }

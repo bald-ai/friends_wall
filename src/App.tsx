@@ -1,6 +1,7 @@
 import {
   type ChangeEvent,
   type ClipboardEvent,
+  type DragEvent,
   type FormEvent,
   startTransition,
   useEffect,
@@ -17,15 +18,21 @@ import {
   type EnvironmentReport,
 } from "./lib/native";
 import type { AppState, IncomingCommand } from "./lib/types";
+import {
+  HEARTBEAT_INTERVAL_MS,
+  deriveActiveInvite,
+  derivePresenceStatus,
+  shouldSendHeartbeatOnResume,
+} from "../shared/runtime";
 
 const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
-function formatStatusDate(timestamp?: number) {
+function formatStatusDate(timestamp: number | undefined, currentTime: number) {
   if (!timestamp) {
     return "Just now";
   }
 
-  const seconds = Math.round((timestamp - Date.now()) / 1000);
+  const seconds = Math.round((timestamp - currentTime) / 1000);
   if (Math.abs(seconds) < 60) {
     return relativeTime.format(seconds, "second");
   }
@@ -79,11 +86,19 @@ export function App() {
   const [nameDraft, setNameDraft] = useState(initialDevice.deviceName);
   const [inviteCode, setInviteCode] = useState("");
   const [composerFile, setComposerFile] = useState<File | null>(null);
+  const [composerPreview, setComposerPreview] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<EnvironmentReport | null>(null);
   const [nativeBusy, setNativeBusy] = useState(false);
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
   const queuedCommandIds = useRef(new Set<string>());
   const commandQueue = useRef<Promise<void>>(Promise.resolve());
+  const lastHeartbeatAttemptAt = useRef<number | null>(null);
+  const serverClockBaseline = useRef<{
+    serverNow: number;
+    monotonicNow: number;
+  } | null>(null);
 
   const registerDevice = useMutation(api.devices.registerDevice);
   const heartbeat = useMutation(api.presence.heartbeat);
@@ -116,10 +131,41 @@ export function App() {
       });
   }, []);
 
+  const deriveServerCurrentTime = useEffectEvent(() => {
+    const baseline = serverClockBaseline.current;
+    if (!baseline) {
+      return Date.now();
+    }
+
+    return baseline.serverNow + (performance.now() - baseline.monotonicNow);
+  });
+
+  useEffect(() => {
+    if (appState?.serverNow === undefined) {
+      return;
+    }
+
+    serverClockBaseline.current = {
+      serverNow: appState.serverNow,
+      monotonicNow: performance.now(),
+    };
+    setCurrentTime(appState.serverNow);
+  }, [appState?.serverNow]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTime(deriveServerCurrentTime());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [deriveServerCurrentTime]);
+
   const sendHeartbeat = useEffectEvent(async () => {
     if (!device.deviceName) {
       return;
     }
+
+    lastHeartbeatAttemptAt.current = Date.now();
 
     try {
       await heartbeat({ deviceId: device.deviceId });
@@ -128,14 +174,55 @@ export function App() {
     }
   });
 
+  const resumeHeartbeat = useEffectEvent(() => {
+    const nextCurrentTime = deriveServerCurrentTime();
+    setCurrentTime(nextCurrentTime);
+
+    if (
+      !shouldSendHeartbeatOnResume(
+        lastHeartbeatAttemptAt.current,
+        nextCurrentTime,
+        HEARTBEAT_INTERVAL_MS,
+      )
+    ) {
+      return;
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return;
+    }
+
+    void sendHeartbeat();
+  });
+
   useEffect(() => {
     void sendHeartbeat();
     const intervalId = window.setInterval(() => {
       void sendHeartbeat();
-    }, 10000);
+    }, HEARTBEAT_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
   }, [sendHeartbeat]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        resumeHeartbeat();
+      }
+    };
+
+    window.addEventListener("focus", resumeHeartbeat);
+    window.addEventListener("online", resumeHeartbeat);
+    window.addEventListener("pageshow", resumeHeartbeat);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", resumeHeartbeat);
+      window.removeEventListener("online", resumeHeartbeat);
+      window.removeEventListener("pageshow", resumeHeartbeat);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [resumeHeartbeat]);
 
   const applyIncomingCommand = useEffectEvent(async (command: IncomingCommand) => {
     setNativeBusy(true);
@@ -268,9 +355,19 @@ export function App() {
     }
   }
 
+  function selectFile(file: File) {
+    if (composerPreview) {
+      URL.revokeObjectURL(composerPreview);
+    }
+    setComposerFile(file);
+    setComposerPreview(URL.createObjectURL(file));
+  }
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextFile = event.target.files?.[0] ?? null;
-    setComposerFile(nextFile);
+    const nextFile = event.target.files?.[0];
+    if (nextFile) {
+      selectFile(nextFile);
+    }
   }
 
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
@@ -282,12 +379,39 @@ export function App() {
       return;
     }
 
-    setComposerFile(
+    selectFile(
       new File([file], `clipboard-${Date.now()}.png`, {
         type: file.type || "image/png",
       }),
     );
     setFeedback("Pasted image is ready to send.");
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragOver(true);
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node)) {
+      return;
+    }
+    setDragOver(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragOver(false);
+
+    const file = Array.from(event.dataTransfer.files).find((f) =>
+      f.type.startsWith("image/"),
+    );
+    if (file) {
+      selectFile(file);
+      setFeedback("Dropped image is ready to send.");
+    } else {
+      setFeedback("Drop an image file (JPEG, PNG, etc.).");
+    }
   }
 
   async function handleSendWallpaper() {
@@ -325,8 +449,12 @@ export function App() {
         height: dimensions.height,
       });
 
+      if (composerPreview) {
+        URL.revokeObjectURL(composerPreview);
+      }
       startTransition(() => {
         setComposerFile(null);
+        setComposerPreview(null);
         setFeedback("Wallpaper sent.");
       });
     } catch (error) {
@@ -367,7 +495,12 @@ export function App() {
   const isPaired = appState?.connection?.status === "paired";
   const awaitingAcceptance = appState?.connection?.status === "pending";
   const needsAcceptance = awaitingAcceptance && !appState.connection?.acceptedBySelf;
-  const friendIsOnline = appState?.friendPresence?.isOnline ?? false;
+  const effectiveCurrentTime = currentTime ?? appState?.serverNow ?? Date.now();
+  const activeInvite = deriveActiveInvite(appState?.activeInvite, effectiveCurrentTime);
+  const friendIsOnline = derivePresenceStatus(
+    appState?.friendPresence,
+    effectiveCurrentTime,
+  );
 
   return (
     <main className="shell" onPaste={handlePaste}>
@@ -448,12 +581,12 @@ export function App() {
                 Create invite code
               </button>
 
-              {appState?.activeInvite ? (
+              {activeInvite ? (
                 <div className="invite-card">
                   <span>Share this code</span>
-                  <strong>{appState.activeInvite.code}</strong>
+                  <strong>{activeInvite.code}</strong>
                   <small>
-                    Expires {formatStatusDate(appState.activeInvite.expiresAt)}
+                    Expires {formatStatusDate(activeInvite.expiresAt, effectiveCurrentTime)}
                   </small>
                 </div>
               ) : null}
@@ -515,14 +648,37 @@ export function App() {
 
           {isPaired ? (
             <div className="stack">
-              <div className="dropzone">
-                <p>Choose a local image file or paste an image anywhere in this window.</p>
-                <input accept="image/*" type="file" onChange={handleFileChange} />
-                {composerFile ? (
-                  <strong>{composerFile.name}</strong>
+              <div
+                className={`dropzone${dragOver ? " dropzone--active" : ""}`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                {composerPreview ? (
+                  <img
+                    className="dropzone__preview"
+                    src={composerPreview}
+                    alt={composerFile?.name ?? "Preview"}
+                  />
                 ) : (
-                  <span className="muted">No image selected yet.</span>
+                  <div className="dropzone__placeholder">
+                    <span className="dropzone__icon">📷</span>
+                    <p>
+                      {dragOver
+                        ? "Drop it!"
+                        : "Drag & drop an image here, paste from clipboard, or pick a file"}
+                    </p>
+                  </div>
                 )}
+                <label className="button button--ghost dropzone__pick">
+                  {composerFile ? composerFile.name : "Choose file"}
+                  <input
+                    accept="image/*"
+                    type="file"
+                    onChange={handleFileChange}
+                    hidden
+                  />
+                </label>
               </div>
               <button className="button" type="button" onClick={handleSendWallpaper}>
                 Send wallpaper
@@ -625,7 +781,7 @@ export function App() {
                     <strong>{command.fileName}</strong>
                     <p className="muted">
                       {command.fromDeviceId === device.deviceId ? "Sent" : "Received"}{" "}
-                      {formatStatusDate(command.createdAt)}
+                      {formatStatusDate(command.createdAt, effectiveCurrentTime)}
                     </p>
                   </div>
                   <div className={`badge badge--${command.status}`}>{command.status}</div>

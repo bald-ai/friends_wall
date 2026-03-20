@@ -44,6 +44,7 @@ export type IncomingCommand = CommandRecord & {
 };
 
 export type AppState = {
+  serverNow: number;
   device: DeviceRecord | null;
   activeInvite: InviteRecord | null;
   connection: ConnectionRecord | null;
