@@ -505,30 +505,32 @@ export function App() {
   return (
     <main className="shell" onPaste={handlePaste}>
       <section className="hero">
-        <div>
-          <p className="eyebrow">Friends Wall MVP</p>
-          <h1>Remote wallpaper control for exactly two Macs.</h1>
-          <p className="muted">
-            Pair once, stay live, send an image, and let the other machine apply
-            it immediately through the native macOS wallpaper bridge.
-          </p>
-        </div>
-        <div className="status-stack">
-          <div className={`status-chip ${friendIsOnline ? "status-chip--online" : ""}`}>
-            {appState?.friend
-              ? friendIsOnline
-                ? "Friend active now"
-                : "Friend offline"
-              : "No friend paired yet"}
+        <div className="hero__top">
+          <div>
+            <p className="eyebrow">Friends Wall</p>
+            <h1>Remote wallpaper control for two Macs</h1>
           </div>
-          <div className={`status-chip ${nativeBusy ? "status-chip--busy" : ""}`}>
-            {nativeBusy ? "Applying wallpaper" : "Native bridge idle"}
+          <div className="status-stack">
+            <div className={`status-chip ${friendIsOnline ? "status-chip--online" : ""}`}>
+              {appState?.friend
+                ? friendIsOnline
+                  ? "Friend online"
+                  : "Friend offline"
+                : "Not paired"}
+            </div>
+            <div className={`status-chip ${nativeBusy ? "status-chip--busy" : ""}`}>
+              {nativeBusy ? "Applying…" : "Idle"}
+            </div>
           </div>
         </div>
+        <p className="hero__subtitle">
+          Pair once, stay live, send an image — the other machine applies it
+          instantly through the native macOS bridge.
+        </p>
       </section>
 
       <section className="grid">
-        <article className="panel panel--tall">
+        <article className="panel">
           <header className="panel__header">
             <div>
               <p className="eyebrow">1. Device</p>
@@ -567,7 +569,7 @@ export function App() {
           )}
         </article>
 
-        <article className="panel panel--tall">
+        <article className="panel">
           <header className="panel__header">
             <div>
               <p className="eyebrow">2. Pairing</p>
