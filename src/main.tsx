@@ -5,6 +5,7 @@ import { App } from "./App";
 import "./styles.css";
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
+const convexClient = convexUrl ? new ConvexReactClient(convexUrl) : null;
 
 function MissingConfig() {
   return (
@@ -23,8 +24,8 @@ function MissingConfig() {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {convexUrl ? (
-      <ConvexProvider client={new ConvexReactClient(convexUrl)}>
+    {convexClient ? (
+      <ConvexProvider client={convexClient}>
         <App />
       </ConvexProvider>
     ) : (

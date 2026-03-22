@@ -55,7 +55,6 @@ export default defineSchema({
   wallpaperAssets: defineTable({
     uploadedByDeviceId: v.string(),
     storageId: v.id("_storage"),
-    storageKey: v.string(),
     fileName: v.string(),
     mimeType: v.string(),
     width: v.number(),

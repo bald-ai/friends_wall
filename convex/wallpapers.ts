@@ -1,12 +1,21 @@
 import { ConvexError, v } from "convex/values";
 import { mutationGeneric, type GenericMutationCtx } from "convex/server";
-import { friendIdFromConnection, getDeviceByExternalId, getLiveConnectionForDevice, now } from "./lib";
+import type { Id } from "./_generated/dataModel";
+import {
+  friendIdFromConnection,
+  getDeviceByExternalId,
+  getLiveConnectionForDevice,
+  now,
+} from "./lib";
 
 const mutation = mutationGeneric;
 
-async function requireSendAccess(ctx: GenericMutationCtx<any>, deviceId: string) {
-  const sender = await getDeviceByExternalId(ctx, deviceId);
-  if (!sender) {
+async function requireSendTargetDeviceId(
+  ctx: GenericMutationCtx<any>,
+  deviceId: string,
+) {
+  const device = await getDeviceByExternalId(ctx, deviceId);
+  if (!device) {
     throw new ConvexError("Register this device before sending wallpapers.");
   }
 
@@ -24,11 +33,20 @@ async function requireSendAccess(ctx: GenericMutationCtx<any>, deviceId: string)
     throw new ConvexError("Your friend has paused remote wallpaper changes.");
   }
 
-  return {
-    sender,
-    target,
-    targetDeviceId,
-  };
+  return targetDeviceId;
+}
+
+async function requireIncomingCommand(
+  ctx: GenericMutationCtx<any>,
+  deviceId: string,
+  commandId: Id<"wallpaperCommands">,
+) {
+  const command = await ctx.db.get(commandId);
+  if (!command || command.toDeviceId !== deviceId) {
+    throw new ConvexError("Command is not available for this device.");
+  }
+
+  return command;
 }
 
 export const createUploadUrl = mutation({
@@ -36,7 +54,7 @@ export const createUploadUrl = mutation({
     deviceId: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireSendAccess(ctx, args.deviceId);
+    await requireSendTargetDeviceId(ctx, args.deviceId);
     return ctx.storage.generateUploadUrl();
   },
 });
@@ -51,13 +69,12 @@ export const sendWallpaper = mutation({
     height: v.number(),
   },
   handler: async (ctx, args) => {
-    const { targetDeviceId } = await requireSendAccess(ctx, args.fromDeviceId);
+    const targetDeviceId = await requireSendTargetDeviceId(ctx, args.fromDeviceId);
 
     const createdAt = now();
     const assetId = await ctx.db.insert("wallpaperAssets", {
       uploadedByDeviceId: args.fromDeviceId,
       storageId: args.storageId,
-      storageKey: `${args.fromDeviceId}/${createdAt}-${args.fileName}`,
       fileName: args.fileName,
       mimeType: args.mimeType,
       width: args.width,
@@ -81,10 +98,7 @@ export const markDelivered = mutation({
     commandId: v.id("wallpaperCommands"),
   },
   handler: async (ctx, args) => {
-    const command = await ctx.db.get(args.commandId);
-    if (!command || command.toDeviceId !== args.deviceId) {
-      throw new ConvexError("Command is not available for this device.");
-    }
+    const command = await requireIncomingCommand(ctx, args.deviceId, args.commandId);
     if (command.status === "sent") {
       await ctx.db.patch(command._id, {
         status: "delivered",
@@ -101,13 +115,16 @@ export const markApplied = mutation({
     commandId: v.id("wallpaperCommands"),
   },
   handler: async (ctx, args) => {
-    const command = await ctx.db.get(args.commandId);
-    if (!command || command.toDeviceId !== args.deviceId) {
-      throw new ConvexError("Command is not available for this device.");
+    const command = await requireIncomingCommand(ctx, args.deviceId, args.commandId);
+    if (command.status === "applied") {
+      return { ok: true };
     }
+
     await ctx.db.patch(command._id, {
       status: "applied",
       appliedAt: now(),
+      failedAt: undefined,
+      failureReason: undefined,
     });
     return { ok: true };
   },
@@ -120,10 +137,11 @@ export const markFailed = mutation({
     failureReason: v.string(),
   },
   handler: async (ctx, args) => {
-    const command = await ctx.db.get(args.commandId);
-    if (!command || command.toDeviceId !== args.deviceId) {
-      throw new ConvexError("Command is not available for this device.");
+    const command = await requireIncomingCommand(ctx, args.deviceId, args.commandId);
+    if (command.status === "applied") {
+      return { ok: true };
     }
+
     await ctx.db.patch(command._id, {
       status: "failed",
       failedAt: now(),

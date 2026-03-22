@@ -81,9 +81,8 @@ function readError(error: unknown) {
 }
 
 export function App() {
-  const initialDevice = loadLocalDevice() ?? createAnonymousDevice();
-  const [device, setDevice] = useState(initialDevice);
-  const [nameDraft, setNameDraft] = useState(initialDevice.deviceName);
+  const [device, setDevice] = useState(() => loadLocalDevice() ?? createAnonymousDevice());
+  const [nameDraft, setNameDraft] = useState(device.deviceName);
   const [inviteCode, setInviteCode] = useState("");
   const [composerFile, setComposerFile] = useState<File | null>(null);
   const [composerPreview, setComposerPreview] = useState<string | null>(null);
@@ -130,6 +129,16 @@ export function App() {
         });
       });
   }, []);
+
+  useEffect(() => {
+    if (!composerPreview) {
+      return;
+    }
+
+    return () => {
+      URL.revokeObjectURL(composerPreview);
+    };
+  }, [composerPreview]);
 
   const deriveServerCurrentTime = useEffectEvent(() => {
     const baseline = serverClockBaseline.current;
@@ -196,13 +205,17 @@ export function App() {
   });
 
   useEffect(() => {
+    if (!device.deviceName) {
+      return;
+    }
+
     void sendHeartbeat();
     const intervalId = window.setInterval(() => {
       void sendHeartbeat();
     }, HEARTBEAT_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [sendHeartbeat]);
+  }, [device.deviceName, sendHeartbeat]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -356,9 +369,6 @@ export function App() {
   }
 
   function selectFile(file: File) {
-    if (composerPreview) {
-      URL.revokeObjectURL(composerPreview);
-    }
     setComposerFile(file);
     setComposerPreview(URL.createObjectURL(file));
   }
@@ -449,9 +459,6 @@ export function App() {
         height: dimensions.height,
       });
 
-      if (composerPreview) {
-        URL.revokeObjectURL(composerPreview);
-      }
       startTransition(() => {
         setComposerFile(null);
         setComposerPreview(null);
