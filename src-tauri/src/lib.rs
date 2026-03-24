@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 use tauri::command;
 use thiserror::Error;
 
@@ -39,16 +41,27 @@ fn escape_swift_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn run_swift_json(script: &str) -> Result<serde_json::Value, NativeError> {
-    let output = Command::new("/usr/bin/swift").arg("-e").arg(script).output()?;
+fn run_process(command: &str, args: &[&str]) -> Result<String, NativeError> {
+    let output = Command::new(command).args(args).output()?;
 
     if !output.status.success() {
-        return Err(NativeError::Message(
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        ));
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("{command} failed with status {}", output.status)
+        };
+        return Err(NativeError::Message(message));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn run_swift_json(script: &str) -> Result<serde_json::Value, NativeError> {
+    let stdout = run_process("/usr/bin/swift", &["-e", script])?;
     Ok(serde_json::from_str(stdout.trim())?)
 }
 
@@ -110,7 +123,7 @@ fn inspect_macos_environment() -> Result<EnvironmentReport, NativeError> {
 }
 
 #[cfg(target_os = "macos")]
-fn apply_macos_wallpaper(image_path: &str) -> Result<i64, NativeError> {
+fn apply_macos_wallpaper_now(image_path: &str) -> Result<i64, NativeError> {
     let escaped_path = escape_swift_string(image_path);
     let script = format!(
         r#"
@@ -135,6 +148,110 @@ print("{{\"appliedScreenCount\": \(NSScreen.screens.count)}}")
 
     let output = run_swift_json(&script)?;
     Ok(output["appliedScreenCount"].as_i64().unwrap_or(0))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_macos_wallpaper_now(_image_path: &str) -> Result<i64, NativeError> {
+    Err(NativeError::Message(
+        "Wallpaper application only works on macOS.".to_string(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn persist_macos_wallpaper(image_path: &str) -> Result<(), NativeError> {
+    let script = r#"
+import plistlib
+import sys
+from pathlib import Path
+
+image_path = Path(sys.argv[1]).expanduser().resolve()
+store_path = Path.home() / "Library/Application Support/com.apple.wallpaper/Store/Index.plist"
+
+if not store_path.exists():
+    raise SystemExit(f"Wallpaper store not found: {store_path}")
+
+with store_path.open("rb") as handle:
+    store = plistlib.load(handle)
+
+image_url = image_path.as_uri()
+new_config = plistlib.dumps(
+    {
+        "type": "imageFile",
+        "url": {"relative": image_url},
+    },
+    fmt=plistlib.FMT_BINARY,
+)
+
+def rewrite_desktop(node):
+    if not isinstance(node, dict):
+        return 0
+
+    changed = 0
+    desktop = node.get("Desktop")
+    if isinstance(desktop, dict):
+        content = desktop.get("Content")
+        if isinstance(content, dict):
+            content["Choices"] = [
+                {
+                    "Configuration": new_config,
+                    "Files": [],
+                    "Provider": "com.apple.wallpaper.choice.image",
+                }
+            ]
+            content["Shuffle"] = "$null"
+            changed += 1
+
+    for value in node.values():
+        if isinstance(value, dict):
+            changed += rewrite_desktop(value)
+    return changed
+
+changed_count = rewrite_desktop(store)
+
+with store_path.open("wb") as handle:
+    plistlib.dump(store, handle, fmt=plistlib.FMT_BINARY)
+
+print(changed_count)
+"#;
+
+    let updated = run_process("/usr/bin/python3", &["-c", script, image_path])?;
+    if updated.is_empty() {
+        return Err(NativeError::Message(
+            "Wallpaper store update did not report any changes.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn persist_macos_wallpaper(_image_path: &str) -> Result<(), NativeError> {
+    Err(NativeError::Message(
+        "Wallpaper persistence only works on macOS.".to_string(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn refresh_macos_wallpaper_services() -> Result<(), NativeError> {
+    for process_name in ["WallpaperAgent", "Dock"] {
+        let _ = Command::new("/usr/bin/killall").arg(process_name).output()?;
+    }
+    thread::sleep(Duration::from_secs(2));
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn refresh_macos_wallpaper_services() -> Result<(), NativeError> {
+    Err(NativeError::Message(
+        "Wallpaper refresh only works on macOS.".to_string(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn apply_macos_wallpaper(image_path: &str) -> Result<i64, NativeError> {
+    let applied_screen_count = apply_macos_wallpaper_now(image_path)?;
+    persist_macos_wallpaper(image_path)?;
+    refresh_macos_wallpaper_services()?;
+    Ok(applied_screen_count)
 }
 
 #[cfg(not(target_os = "macos"))]

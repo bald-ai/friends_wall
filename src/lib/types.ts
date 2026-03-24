@@ -43,13 +43,17 @@ export type IncomingCommand = CommandRecord & {
   assetUrl: string;
 };
 
+export type Wall = {
+  connection: ConnectionRecord;
+  friend: DeviceRecord | null;
+  friendPresence: FriendPresence | null;
+  incomingCommands: IncomingCommand[];
+};
+
 export type AppState = {
   serverNow: number;
   device: DeviceRecord | null;
   activeInvite: InviteRecord | null;
-  connection: ConnectionRecord | null;
-  friend: DeviceRecord | null;
-  friendPresence: FriendPresence | null;
-  incomingCommands: IncomingCommand[];
+  walls: Wall[];
   recentCommands: CommandRecord[];
 };
